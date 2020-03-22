@@ -17,6 +17,8 @@ import sys
 misp_logger = logging.getLogger('pymisp')
 misp_logger.setLevel(logging.ERROR)
 
+SUPPORTED_ATTRIBUTES = ["ip-src", "ip-dst", "domain", "hostname"]
+TRUSTED_ORGS = ["CIRCL", "ESET"]
 
 class FalcoRules:
     @staticmethod
@@ -123,7 +125,7 @@ class MISPBuilder:
 
 def misp2falco(result):
     falcoRules = []
-    iocsByType = {k: set([]) for k in supported_attributes}
+    iocsByType = {k: set([]) for k in SUPPORTED_ATTRIBUTES}
 
     for ioc in result['Attribute']:
         if "value" in ioc and ioc['value']:
@@ -139,13 +141,13 @@ def misp2falco(result):
                        FalcoRules.macro("misp_mal_ip",
                                         "(fd.rip in (misp_mal_ips))"),
                        FalcoRules.macro(
-                           "misp_mal_event_ip", "(evt.type in (connect, sendmsg, sendto) and evt.dir=< and (fd.net != \"127.0.0.0/8\" and not fd.snet in (rfc_1918_addresses)) and (misp_mal_ip))"),
+                           "misp_mal_event_ip", "(evt.type in (sendmsg, sendto) and evt.dir=< and (fd.net != \"127.0.0.0/8\" and not fd.snet in (rfc_1918_addresses)) and (misp_mal_ip))"),
                        FalcoRules.macro(
-                           "misp_mal_event_domain", "(evt.type in (connect, sendmsg, sendto) and evt.dir=< and (fd.net != \"127.0.0.0/8\" and not fd.snet in (rfc_1918_addresses)) and (misp_mal_domain_connect))"),
+                           "misp_mal_event_domain", "(evt.type in (sendmsg, sendto) and evt.dir=< and (fd.net != \"127.0.0.0/8\" and not fd.snet in (rfc_1918_addresses)) and (misp_mal_domain))"),
                        FalcoRules.rule("Detect known malicious IPs based on MISP feeds", "Suspicious network connection", "misp_mal_event_ip",
-                                       "Suspicious connection based on MISP threat intel (command=%proc.cmdline port=%fd.rport ip=%fd.rip)", "CRITICAL", ["misp", "network", "ioc_ip"]),
+                                       "Suspicious connection based on MISP threat intel (IP) (type=%evt.type command=%proc.cmdline port=%fd.rport ip=%fd.rip)", "WARNING", ["misp", "network", "ioc_ip"]),
                        FalcoRules.rule("Detect known malicious domains based on MISP feeds", "Suspicious network connection", "misp_mal_event_domain",
-                                       "Suspicious connection based on MISP threat intel (command=%proc.cmdline port=%fd.rport ip=%fd.rip)", "CRITICAL", ["misp", "network", "ioc_domain"])
+                                       "Suspicious connection based on MISP threat intel (Hostname) (type=%evt.type command=%proc.cmdline port=%fd.rport ip=%fd.sip domain=%fd.sip.name)", "WARNING", ["misp", "network", "ioc_domain"])
                        ])
 
     return falcoRules
@@ -168,12 +170,12 @@ if __name__ == '__main__':
         .tls_cert(misp_client_cert_path)\
         .build()
 
-    supported_attributes = ["ip-src", "ip-dst", "domain", "hostname"]
     crit = {"category": ["Payload delivery", "Network activity"],
             "to_ids": True,
             "deleted": False,
             "published": True,
-            "type_attribute": supported_attributes,
+            "type_attribute": SUPPORTED_ATTRIBUTES,
+            "org": TRUSTED_ORGS,
             "event_timestamp": (datetime.datetime.now() - datetime.timedelta(days=30)).timestamp()}
     result = misp.search('attributes', **crit)
     print(yaml.dump(misp2falco(result), width=float("inf")))
