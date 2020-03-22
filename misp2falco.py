@@ -154,6 +154,13 @@ def misp2falco(result):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Convert MISP feeds to Sysdig Falco rules. Currently supported: %s" % SUPPORTED_ATTRIBUTES)
+    parser.add_argument('--extra-org', metavar='org', nargs='+', default=[], help='Additional organization to use')
+    parser.add_argument('--no-published-only', action='store_true', default=False, help='Include non-puublished attributes')
+    parser.add_argument('--max-days-old', type=int, default=30, help='Consider feeds updated in <= N days')
+    parser.add_argument('--limit', type=int, default=None, required=False, help='Limit result set from MISP')
+    args = parser.parse_args()
+
     misp_url = os.environ.get("MISP_URL", "")
     misp_key = os.environ.get("MISP_AUTHKEY", "")
     misp_verify = os.environ.get("MISP_VERIFY_CERT", "")
@@ -173,10 +180,16 @@ if __name__ == '__main__':
     crit = {"category": ["Payload delivery", "Network activity"],
             "to_ids": True,
             "deleted": False,
-            "published": True,
             "type_attribute": SUPPORTED_ATTRIBUTES,
-            "org": TRUSTED_ORGS,
-            "event_timestamp": (datetime.datetime.now() - datetime.timedelta(days=30)).timestamp()}
+            "org": set(TRUSTED_ORGS).union(set(args.extra_org)),
+            "event_timestamp": (datetime.datetime.now() - datetime.timedelta(days=args.max_days_old)).timestamp()}
+
+    if not args.no_published_only:
+        crit["published"] = True
+
+    if args.limit:
+        crit["limit"] = args.limit
+
     result = misp.search('attributes', **crit)
     print(yaml.dump(misp2falco(result), width=float("inf")))
     sys.exit(0)
