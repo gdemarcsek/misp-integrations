@@ -1,24 +1,22 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from pymisp import PyMISP
-
 import argparse
 import os
 import json
 import datetime
 import yaml
 import logging
-import ipaddress
-import re
 import sys
 
+from common import *
 
 misp_logger = logging.getLogger('pymisp')
 misp_logger.setLevel(logging.ERROR)
 
 SUPPORTED_ATTRIBUTES = ["ip-src", "ip-dst", "domain", "hostname"]
 TRUSTED_ORGS = ["CIRCL", "ESET"]
+
 
 class FalcoRules:
     @staticmethod
@@ -32,95 +30,6 @@ class FalcoRules:
     @staticmethod
     def rule(name, desc, condition, output, prio, tags):
         return {"rule": name, "desc": desc, "condition": condition, "enabled": True, "output": output, "priority": prio, "tags": tags}
-
-
-class IOCValidator:
-    def validate(self, ioc):
-        return False
-
-
-class IPValidator(IOCValidator):
-    def validate(self, ioc):
-        try:
-            if ioc.endswith(".0"):
-                return False
-            ip = ipaddress.ip_address(ioc)
-            return ip.is_global
-        except ValueError:
-            return False
-
-
-class DomainValidator(IOCValidator):
-    regex = re.compile(
-        r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$')
-
-    def validate(self, ioc):
-        if DomainValidator.regex.match(ioc) is None:
-            return False
-        return True
-
-
-class AlwaysOKValidator(IOCValidator):
-    def validate(self, ioc):
-        return True
-
-
-class ValidatorFactory:
-    ip_validator = None
-    domain_validator = None
-    always_ok_validator = None
-
-    @staticmethod
-    def get(ioc_type):
-        if ioc_type in ["ip-src", "ip-dst"]:
-            if ValidatorFactory.ip_validator is None:
-                ValidatorFactory.ip_validator = IPValidator()
-            return ValidatorFactory.ip_validator
-        elif ioc_type in ["domain", "hostname"]:
-            if ValidatorFactory.domain_validator is None:
-                ValidatorFactory.domain_validator = DomainValidator()
-            return ValidatorFactory.domain_validator
-        else:
-            if ValidatorFactory.always_ok_validator is None:
-                ValidatorFactory.always_ok_validator = AlwaysOKValidator()
-            return ValidatorFactory.always_ok_validator
-
-
-class MISPBuilder:
-    def __init__(self):
-        self._url = ""
-        self._key = ""
-        self._verify = False
-        self._cert = None
-        self._debug = False
-
-    def url(self, v):
-        if v:
-            self._url = v
-        return self
-
-    def authkey(self, v):
-        if v:
-            self._key = v
-        return self
-
-    def tls_cert(self, v):
-        if v:
-            self._cert = v
-        return self
-
-    def tls_verify(self, v):
-        if v:
-            self._verify = v
-        return self
-
-    def debug(self, v):
-        if v:
-            self._debug = v
-        return self
-
-    def build(self):
-        return PyMISP(self._url, self._key, ssl=self._verify, debug=self._debug, cert=self._cert, tool="misp2falco")
 
 
 def misp2falco(result):
@@ -154,11 +63,16 @@ def misp2falco(result):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Convert MISP feeds to Sysdig Falco rules. Currently supported: %s" % SUPPORTED_ATTRIBUTES)
-    parser.add_argument('--extra-org', metavar='org', nargs='+', default=[], help='Additional organization to use')
-    parser.add_argument('--no-published-only', action='store_true', default=False, help='Include non-puublished attributes')
-    parser.add_argument('--max-days-old', type=int, default=30, help='Consider feeds updated in <= N days')
-    parser.add_argument('--limit', type=int, default=None, required=False, help='Limit result set from MISP')
+    parser = argparse.ArgumentParser(
+        description="Convert MISP feeds to Sysdig Falco rules. Currently supported: %s" % SUPPORTED_ATTRIBUTES)
+    parser.add_argument('--extra-org', metavar='org', nargs='+',
+                        default=[], help='Additional organization to use')
+    parser.add_argument('--no-published-only', action='store_true',
+                        default=False, help='Include non-puublished attributes')
+    parser.add_argument('--max-days-old', type=int, default=30,
+                        help='Consider feeds updated in <= N days')
+    parser.add_argument('--limit', type=int, default=None,
+                        required=False, help='Limit result set from MISP')
     args = parser.parse_args()
 
     misp_url = os.environ.get("MISP_URL", "")
@@ -179,6 +93,7 @@ if __name__ == '__main__':
 
     crit = {"category": ["Payload delivery", "Network activity"],
             "to_ids": True,
+            "include_context": False,
             "deleted": False,
             "type_attribute": SUPPORTED_ATTRIBUTES,
             "org": set(TRUSTED_ORGS).union(set(args.extra_org)),

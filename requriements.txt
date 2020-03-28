@@ -7,6 +7,8 @@ idna==2.9
 importlib-metadata==1.5.0
 jsonschema==3.2.0
 pkg-resources==0.0.0
+ply==3.11
+plyara==2.0.3
 pycodestyle==2.5.0
 pymisp==2.4.123
 pyrsistent==0.15.7
